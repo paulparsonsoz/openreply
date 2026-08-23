@@ -118,7 +118,7 @@ export async function GET(request: NextRequest) {
           level: "ERROR",
           workspaceId: state.workspaceId,
           message: "Instagram connection failed",
-          payload: { reason: message },
+          payload: { reason: message, redirectUri: `${baseUrl}/api/instagram/callback` },
         },
       })
       .catch(() => {});

@@ -102,8 +102,14 @@ export async function exchangeCodeForToken(
 
   if (!response.ok) {
     const error = await response.json();
+    // Meta reuses "Error validating verification code" for several distinct
+    // failures, so the redirect_uri we actually sent has to travel with the
+    // message — without it there is no way to tell a genuine URI mismatch
+    // apart from a client_id/secret pair that does not own the code.
     throw new Error(
-      `Token exchange failed: ${error.error_message || JSON.stringify(error)}`
+      `Token exchange failed: ${
+        error.error_message || JSON.stringify(error)
+      } (redirect_uri sent: ${redirectUri})`
     );
   }
 
