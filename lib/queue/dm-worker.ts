@@ -26,7 +26,7 @@ import {
   sendPrivateReplyWithLinkButton,
 } from "@/lib/meta/client";
 import { decryptToken } from "@/lib/meta/oauth";
-import { matchKeywords } from "@/lib/utils/keyword-matcher";
+import { matchTrigger } from "@/lib/utils/trigger-matcher";
 import { reserveDMSlot } from "@/lib/utils/rate-limiter";
 import {
   releaseWorkspaceDMReservation,
@@ -188,6 +188,44 @@ async function sendRevealDirectMessage(
   }
 }
 
+/**
+ * Log a comment the trigger matcher deliberately rejected (intent or spam), so
+ * the decision is visible in DM logs. Create-only: an existing row (e.g. an
+ * earlier SENT) is never overwritten. The comment reconciler treats these rows
+ * as handled, so a rejected comment isn't re-judged on every sweep.
+ */
+async function recordTriggerSkip(
+  automation: { id: string; workspaceId: string; instagramAccountId: string },
+  reason: string,
+  item: {
+    commenterId: string;
+    commenterName?: string;
+    commentText: string;
+    commentId: string;
+  }
+): Promise<void> {
+  await prisma.dmLog.upsert({
+    where: {
+      automationId_commentId: {
+        automationId: automation.id,
+        commentId: item.commentId,
+      },
+    },
+    create: {
+      workspaceId: automation.workspaceId,
+      automationId: automation.id,
+      instagramAccountId: automation.instagramAccountId,
+      commenterId: item.commenterId,
+      commenterName: item.commenterName,
+      commentText: item.commentText,
+      commentId: item.commentId,
+      status: "SKIPPED_NO_MATCH",
+      errorMessage: reason,
+    },
+    update: {},
+  });
+}
+
 async function processComment(job: Job<ProcessCommentJob>): Promise<void> {
   const {
     instagramAccountId,
@@ -224,16 +262,19 @@ async function processComment(job: Job<ProcessCommentJob>): Promise<void> {
   });
 
   for (const automation of automations) {
-    // "Any word" campaigns fire on every comment; otherwise require a keyword hit.
-    const matchResult = automation.matchAnyWord
-      ? { matched: true, matchedKeyword: null }
-      : matchKeywords(
-          commentText,
-          automation.keywords,
-          automation.wholeWordMatch
-        );
+    // "Any word" campaigns fire on every comment; otherwise require a keyword
+    // hit, or a request-intent judgment when the campaign opts into it.
+    const matchResult = await matchTrigger(automation, commentText);
 
     if (!matchResult.matched) {
+      if (matchResult.skipReason) {
+        await recordTriggerSkip(automation, matchResult.skipReason, {
+          commenterId,
+          commenterName,
+          commentText,
+          commentId,
+        });
+      }
       continue;
     }
 
@@ -958,15 +999,18 @@ async function processMessage(job: Job<ProcessMessageJob>): Promise<void> {
   const dedupeId = `dm:${messageId}`;
 
   for (const automation of automations) {
-    const matchResult = automation.matchAnyWord
-      ? { matched: true, matchedKeyword: null }
-      : matchKeywords(
-          messageText,
-          automation.keywords,
-          automation.wholeWordMatch
-        );
+    const matchResult = await matchTrigger(automation, messageText);
 
-    if (!matchResult.matched) continue;
+    if (!matchResult.matched) {
+      if (matchResult.skipReason) {
+        await recordTriggerSkip(automation, matchResult.skipReason, {
+          commenterId: senderId,
+          commentText: messageText,
+          commentId: dedupeId,
+        });
+      }
+      continue;
+    }
 
     const existingLog = await prisma.dmLog.findUnique({
       where: {

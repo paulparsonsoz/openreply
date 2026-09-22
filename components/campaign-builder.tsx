@@ -37,6 +37,9 @@ interface LoadedCampaign {
   keywords: string[];
   matchAnyWord: boolean;
   dmTriggerEnabled: boolean;
+  intentMatching?: boolean;
+  spamFilterEnabled?: boolean;
+  offerDescription?: string | null;
   dmMessage: string;
   openingDmEnabled: boolean;
   openingDmMessage: string | null;
@@ -158,6 +161,9 @@ export default function CampaignBuilder({ mode, campaignId }: CampaignBuilderPro
   const [matchMode, setMatchMode] = useState<MatchMode>("specific");
   const [keywordText, setKeywordText] = useState("");
   const [dmTriggerEnabled, setDmTriggerEnabled] = useState(false);
+  const [intentMatching, setIntentMatching] = useState(false);
+  const [spamFilterEnabled, setSpamFilterEnabled] = useState(false);
+  const [offerDescription, setOfferDescription] = useState("");
 
   const [publicReplyEnabled, setPublicReplyEnabled] = useState(false);
   const [publicReplyMessages, setPublicReplyMessages] = useState<string[]>([""]);
@@ -259,6 +265,9 @@ export default function CampaignBuilder({ mode, campaignId }: CampaignBuilderPro
         setMatchMode(c.matchAnyWord ? "any" : "specific");
         setKeywordText(c.keywords.join(", "));
         setDmTriggerEnabled(c.dmTriggerEnabled ?? false);
+        setIntentMatching(c.intentMatching ?? false);
+        setSpamFilterEnabled(c.spamFilterEnabled ?? false);
+        setOfferDescription(c.offerDescription ?? "");
         setPublicReplyEnabled(c.publicReplyEnabled);
         setPublicReplyMessages(
           c.publicReplyMessages?.length
@@ -407,6 +416,9 @@ export default function CampaignBuilder({ mode, campaignId }: CampaignBuilderPro
       matchAnyWord: matchMode === "any",
       keywords: matchMode === "any" ? [] : keywords,
       dmTriggerEnabled,
+      intentMatching: matchMode === "specific" && intentMatching,
+      spamFilterEnabled,
+      offerDescription: offerDescription.trim() || null,
       dmMessage,
       openingDmEnabled,
       openingDmMessage: openingDmEnabled ? openingDmMessage : null,
@@ -712,6 +724,31 @@ export default function CampaignBuilder({ mode, campaignId }: CampaignBuilderPro
                 className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder:text-zinc-500 focus:border-accent/40 focus:outline-none"
               />
               <p className="text-xs text-muted">Use commas to separate words</p>
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2.5">
+                <span className="text-sm text-foreground">
+                  also catch people asking in their own words
+                </span>
+                <Toggle
+                  on={intentMatching}
+                  onToggle={() => setIntentMatching(!intentMatching)}
+                />
+              </div>
+              {intentMatching && (
+                <div className="space-y-1">
+                  <p className="text-xs text-muted">
+                    Uses TypeSafe AI to reply to &quot;send it pls&quot;, typos and 🔗, and to
+                    skip comments like &quot;the link is broken&quot;. Falls back to the words
+                    above if TypeSafe is unavailable.
+                  </p>
+                  <input
+                    value={offerDescription}
+                    onChange={(e) => setOfferDescription(e.target.value)}
+                    maxLength={300}
+                    placeholder="What the DM gives them, e.g. the link to shop the linen collection"
+                    className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder:text-zinc-500 focus:border-accent/40 focus:outline-none"
+                  />
+                </div>
+              )}
             </div>
           )}
           <Radio
@@ -735,6 +772,19 @@ export default function CampaignBuilder({ mode, campaignId }: CampaignBuilderPro
               {matchMode === "any"
                 ? "Every DM to this account gets the reply below — use with care."
                 : "A DM containing any of these words gets the same reply, no comment needed."}
+            </p>
+          )}
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2.5">
+            <span className="text-sm text-foreground">skip spam and promo comments</span>
+            <Toggle
+              on={spamFilterEnabled}
+              onToggle={() => setSpamFilterEnabled(!spamFilterEnabled)}
+            />
+          </div>
+          {spamFilterEnabled && (
+            <p className="text-xs text-muted">
+              Uses TypeSafe AI to leave out comments like &quot;buy followers cheap&quot;.
+              Skipped comments show in your DM logs with the reason.
             </p>
           )}
           <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2.5">
