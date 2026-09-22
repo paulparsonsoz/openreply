@@ -88,7 +88,8 @@ vi.mock("@/lib/meta/oauth", () => ({
   decryptToken: mockDecryptToken,
 }));
 
-vi.mock("@/lib/utils/keyword-matcher", () => ({
+vi.mock("@/lib/utils/keyword-matcher", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/utils/keyword-matcher")>()),
   matchKeywords: mockMatchKeywords,
 }));
 
@@ -345,6 +346,53 @@ describe("DM Worker — Full Pipeline", () => {
 
     expect(mockSendPrivateReply).not.toHaveBeenCalled();
     expect(mockReserveWorkspaceDMSend).not.toHaveBeenCalled();
+  });
+
+  it("should log and skip a keyword hit that intent matching rejects", async () => {
+    vi.stubEnv("TYPESAFE_API_KEY", "test-key");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          answers: {
+            intent: {
+              type: "choice",
+              choice: "problem_report",
+              confidence: 0.98,
+              probabilities: { problem_report: 0.98 },
+            },
+          },
+        }),
+      })
+    );
+    mockPrisma.automation.findMany.mockResolvedValue([
+      { ...mockAutomation, intentMatching: true },
+    ]);
+
+    try {
+      const processor = getProcessor();
+      await processor(
+        createMockJob({ ...mockJobData, commentText: "the LINK in your bio is broken" })
+      );
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
+
+    expect(mockPrisma.dmLog.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          status: "SKIPPED_NO_MATCH",
+          errorMessage: "Intent: problem_report (confidence 0.98)",
+          commentId: "comment_555",
+        }),
+        update: {},
+      })
+    );
+    expect(mockSendPrivateReply).not.toHaveBeenCalled();
+    expect(mockSendPrivateReplyWithLinkButton).not.toHaveBeenCalled();
   });
 
   it("should skip duplicate comments already sent", async () => {

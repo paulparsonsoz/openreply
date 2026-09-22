@@ -182,6 +182,9 @@ export default function LogsPage() {
                     </td>
                     <td className="px-4 py-4 sm:px-6">
                       <StatusBadge status={log.status} />
+                      {log.status === "SKIPPED_NO_MATCH" && log.errorMessage && (
+                        <p className="mt-1 text-xs text-muted">{log.errorMessage}</p>
+                      )}
                     </td>
                     <td className="px-4 py-4 text-muted whitespace-nowrap sm:px-6">
                       {new Date(log.createdAt).toLocaleString("en-US", {

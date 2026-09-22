@@ -60,6 +60,9 @@ const createAutomationSchema = z
     secondaryButtonLabel: z.string().max(20).optional().nullable(),
     isActive: z.boolean().optional().default(true),
     wholeWordMatch: z.boolean().optional().default(true),
+    intentMatching: z.boolean().optional().default(false),
+    spamFilterEnabled: z.boolean().optional().default(false),
+    offerDescription: z.string().max(300).optional().nullable(),
   })
   // A campaign must target a specific post, any post, or the next reel.
   .refine(
@@ -106,6 +109,9 @@ const updateAutomationSchema = z.object({
   publicReplyMessages: z.array(z.string().max(1000)).max(10).optional(),
   isActive: z.boolean().optional(),
   wholeWordMatch: z.boolean().optional(),
+  intentMatching: z.boolean().optional(),
+  spamFilterEnabled: z.boolean().optional(),
+  offerDescription: z.string().max(300).optional().nullable(),
   reportShareEnabled: z.boolean().optional(),
   // Empty string clears the tracked link; a URL updates/creates it; undefined
   // leaves it unchanged.
@@ -427,6 +433,10 @@ export async function POST(request: NextRequest) {
         : null,
       isActive: parsed.data.isActive,
       wholeWordMatch: parsed.data.wholeWordMatch,
+      // Intent matching only applies to specific-word campaigns.
+      intentMatching: matchAnyWord ? false : parsed.data.intentMatching,
+      spamFilterEnabled: parsed.data.spamFilterEnabled,
+      offerDescription: parsed.data.offerDescription?.trim() || null,
       workspaceId,
       instagramAccountId: instagramAccount.id,
       reportShareSlug: generateReportShareSlug(),
@@ -505,7 +515,13 @@ export async function PATCH(request: NextRequest) {
 
   // Keep dependent fields consistent: any-word clears keywords; a disabled
   // opening DM clears its message and button.
-  if (automationData.matchAnyWord === true) automationData.keywords = [];
+  if (automationData.matchAnyWord === true) {
+    automationData.keywords = [];
+    automationData.intentMatching = false;
+  }
+  if (automationData.offerDescription !== undefined) {
+    automationData.offerDescription = automationData.offerDescription?.trim() || null;
+  }
   if (automationData.openingDmEnabled === false) {
     automationData.openingDmMessage = null;
     automationData.openingDmButtonLabel = null;

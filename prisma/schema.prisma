@@ -200,6 +200,13 @@ model Automation {
   publicReplyMessages String[] @default([])
   isActive       Boolean @default(true)
   wholeWordMatch Boolean @default(true)
+  // Optional TypeSafe checks (see lib/utils/trigger-matcher.ts). Intent matching
+  // fires on anyone asking for the offer, not just literal keyword hits; the
+  // spam filter skips spam/promo comments. Both fall back to keywords on error.
+  intentMatching    Boolean @default(false)
+  spamFilterEnabled Boolean @default(false)
+  // What the DM gives people, in plain words. Context for intent matching.
+  offerDescription  String?
   reportShareSlug    String? @unique
   reportShareEnabled Boolean @default(true)
 

@@ -72,6 +72,7 @@ export async function reconcileComments(): Promise<void> {
       matchAnyWord: true,
       keywords: true,
       wholeWordMatch: true,
+      intentMatching: true,
       publicReplyEnabled: true,
       workspaceId: true,
       instagramAccount: {
@@ -112,6 +113,7 @@ async function sweepCampaign(
     matchAnyWord: boolean;
     keywords: string[];
     wholeWordMatch: boolean;
+    intentMatching: boolean;
     publicReplyEnabled: boolean;
     instagramAccount: {
       id: string;
@@ -128,7 +130,9 @@ async function sweepCampaign(
     campaign: automation.name,
     keywords: automation.matchAnyWord
       ? "(any word)"
-      : automation.keywords.join(","),
+      : automation.intentMatching
+        ? `(intent) ${automation.keywords.join(",")}`
+        : automation.keywords.join(","),
     matched: 0,
     alreadyReplied: 0,
     enqueued: 0,
@@ -177,15 +181,18 @@ async function sweepCampaign(
     }
 
     // Keep only comments that (a) aren't the account's own, (b) match the
-    // keyword, and (c) have no reply from the account owner yet.
+    // keyword, and (c) have no reply from the account owner yet. Intent-matching
+    // campaigns can't pre-filter on keywords (that would drop "send it pls"), so
+    // every comment is a candidate and the worker makes the intent call once.
     const needsAction = comments.filter((c) => {
       const authorId = c.from?.id;
       if (!authorId || authorId === account.instagramId) return false;
 
-      const matched = automation.matchAnyWord
-        ? true
-        : matchKeywords(c.text ?? "", automation.keywords, automation.wholeWordMatch)
-            .matched;
+      const matched =
+        automation.matchAnyWord || automation.intentMatching
+          ? true
+          : matchKeywords(c.text ?? "", automation.keywords, automation.wholeWordMatch)
+              .matched;
       if (!matched) return false;
       stat.matched += 1;
 
@@ -206,13 +213,18 @@ async function sweepCampaign(
     // enough — the reply still has to land); otherwise a SENT DM is enough. This
     // is what lets a comment whose DM sent but whose public reply failed come
     // back and retry the reply.
+    // Comments the worker already rejected on intent or spam are handled too, so
+    // they aren't re-judged every sweep.
     const handled = await prisma.dmLog.findMany({
       where: {
         automationId: automation.id,
         commentId: { in: needsAction.map((c) => c.id) },
-        ...(automation.publicReplyEnabled
-          ? { publicReplySentAt: { not: null } }
-          : { status: "SENT" }),
+        OR: [
+          automation.publicReplyEnabled
+            ? { publicReplySentAt: { not: null } }
+            : { status: "SENT" },
+          { status: "SKIPPED_NO_MATCH" },
+        ],
       },
       select: { commentId: true },
     });

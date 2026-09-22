@@ -110,6 +110,13 @@ Optional, for tuning the polling reconciler (defaults are fine to start):
 | `COMMENT_POLL_MAX_PER_SWEEP` | `30` | Max new comments each campaign acts on per sweep. Keep it conservative; higher gets closer to Instagram's rate limits. |
 | `COMMENT_POLL_LOOKBACK_HOURS` | `72` | How far back a sweep considers comments. |
 
+Optional, for AI comment matching:
+
+| Variable | Default | What it does |
+| --- | --- | --- |
+| `TYPESAFE_API_KEY` | unset | Turns on two per-campaign options: "also catch people asking in their own words" and "skip spam and promo comments". Set it on the worker, which is where matching happens. Without it those options do nothing and campaigns use keywords only. Comment text is sent to [TypeSafe](https://typesafe.ai) for these checks, so mention that in your privacy policy if you enable them. |
+| `TYPESAFE_TIMEOUT_MS` | `5000` | How long to wait for a TypeSafe answer before falling back to keywords. |
+
 ## The Meta app
 
 This is the slow part. The code works out of the box; getting Meta to send you comment events is where people lose an afternoon. Every step here exists because skipping it breaks something later. Have your Vercel domain from Step 3 ready, you will paste it in a few times.

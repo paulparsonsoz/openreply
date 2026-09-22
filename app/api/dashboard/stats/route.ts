@@ -141,9 +141,14 @@ export async function GET(request: NextRequest) {
           select: { name: true, email: true },
         })
       : Promise.resolve(null),
-    // Distinct people who have interacted, counted as "contacts".
+    // Distinct people who have interacted, counted as "contacts". Comments the
+    // trigger matcher rejected (spam, not a request) are not contacts.
     prisma.dmLog.findMany({
-      where: { workspaceId, ...accountFilter },
+      where: {
+        workspaceId,
+        status: { not: "SKIPPED_NO_MATCH" },
+        ...accountFilter,
+      },
       distinct: ["commenterId"],
       select: { commenterId: true },
     }),
