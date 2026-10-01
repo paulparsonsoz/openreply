@@ -8,8 +8,11 @@ const startedAt = new Date().toISOString();
 const HEARTBEAT_INTERVAL_MS = 30_000;
 // Polling safety net for comments that webhooks miss. Runs in the worker because
 // it must fire every few minutes and Vercel's free crons only run once a day.
+// Keep this well above Neon's 5 minute scale-to-zero window. Each sweep queries
+// Postgres, so a 5 minute interval wakes the database just before it can sleep
+// and the compute never suspends.
 const POLL_INTERVAL_MS = Number(
-  process.env.COMMENT_POLL_INTERVAL_MS ?? 5 * 60_000
+  process.env.COMMENT_POLL_INTERVAL_MS ?? 15 * 60_000
 );
 
 console.log("[DM Worker] Started");
