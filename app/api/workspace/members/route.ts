@@ -120,6 +120,29 @@ export async function POST(request: NextRequest) {
   });
 
   if (existingUser) {
+    // Inviting someone who is already in the workspace must never change their
+    // role (and above all never an OWNER's). Role changes go through PATCH,
+    // which carries the owner protection.
+    const existingMember = await prisma.workspaceMember.findUnique({
+      where: {
+        workspaceId_userId: {
+          workspaceId: context.workspaceId,
+          userId: existingUser.id,
+        },
+      },
+      select: { id: true },
+    });
+    if (existingMember) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "This person is already a member. Change their role from the members list instead.",
+        },
+        { status: 400 }
+      );
+    }
+
     await prisma.workspaceMember.upsert({
       where: {
         workspaceId_userId: {
@@ -132,9 +155,9 @@ export async function POST(request: NextRequest) {
         userId: existingUser.id,
         role: parsed.data.role,
       },
-      update: {
-        role: parsed.data.role,
-      },
+      // If a membership appeared between the check above and this write,
+      // leave it exactly as it is.
+      update: {},
     });
   } else {
     await prisma.workspaceInvitation.upsert({
