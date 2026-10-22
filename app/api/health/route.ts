@@ -4,55 +4,48 @@ import { getDMQueue, getRedisConnection } from "@/lib/queue/client";
 import { getWorkerHealth } from "@/lib/ops/worker-health";
 
 export const runtime = "nodejs";
-// Health must reflect live state (worker heartbeat, queue depth), never a
-// cached response, or it reports stale worker start times.
+// Health must reflect live state (worker heartbeat), never a cached response.
 export const dynamic = "force-dynamic";
 
-type CheckStatus = "ok" | "error";
+// This endpoint is public, so it reports only pass/fail per component. Error
+// messages, hostnames, pids and queue counts stay server side; signed-in
+// admins can see the detail on the Diagnostics page.
 
-interface HealthCheck {
-  status: CheckStatus;
-  detail?: string;
-}
-
-async function checkDatabase(): Promise<HealthCheck> {
+async function checkDatabase(): Promise<boolean> {
   try {
     await prisma.$queryRaw`SELECT 1`;
-    return { status: "ok" };
+    return true;
   } catch (error) {
-    return {
-      status: "error",
-      detail: error instanceof Error ? error.message : "Database check failed",
-    };
+    console.error("[health] database check failed", error);
+    return false;
   }
 }
 
-async function checkRedis(): Promise<HealthCheck> {
+async function checkRedis(): Promise<boolean> {
   try {
-    const pong = await getRedisConnection().ping();
-    return { status: pong === "PONG" ? "ok" : "error", detail: pong };
+    return (await getRedisConnection().ping()) === "PONG";
   } catch (error) {
-    return {
-      status: "error",
-      detail: error instanceof Error ? error.message : "Redis check failed",
-    };
+    console.error("[health] redis check failed", error);
+    return false;
   }
 }
 
-async function checkQueue(): Promise<HealthCheck & { counts?: unknown }> {
+async function checkQueue(): Promise<boolean> {
   try {
-    const counts = await getDMQueue().getJobCounts(
-      "waiting",
-      "active",
-      "delayed",
-      "failed"
-    );
-    return { status: "ok", counts };
+    await getDMQueue().getJobCounts("waiting");
+    return true;
   } catch (error) {
-    return {
-      status: "error",
-      detail: error instanceof Error ? error.message : "Queue check failed",
-    };
+    console.error("[health] queue check failed", error);
+    return false;
+  }
+}
+
+async function checkWorker(): Promise<boolean> {
+  try {
+    return (await getWorkerHealth()).healthy;
+  } catch (error) {
+    console.error("[health] worker check failed", error);
+    return false;
   }
 }
 
@@ -61,28 +54,19 @@ export async function GET() {
     checkDatabase(),
     checkRedis(),
     checkQueue(),
-    getWorkerHealth().catch((error) => ({
-      healthy: false,
-      heartbeat: null,
-      ageMs: null,
-      error: error instanceof Error ? error.message : "Worker check failed",
-    })),
+    checkWorker(),
   ]);
 
-  const healthy =
-    database.status === "ok" &&
-    redis.status === "ok" &&
-    queue.status === "ok" &&
-    worker.healthy;
+  const healthy = database && redis && queue && worker;
 
   return NextResponse.json(
     {
       status: healthy ? "ok" : "degraded",
       checks: {
-        database,
-        redis,
-        queue,
-        worker,
+        database: { ok: database },
+        redis: { ok: redis },
+        queue: { ok: queue },
+        worker: { ok: worker, healthy: worker },
       },
     },
     { status: healthy ? 200 : 503 }
